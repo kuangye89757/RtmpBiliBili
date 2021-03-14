@@ -7,8 +7,14 @@ public class RtmpPackage {
     
     private byte[] buffer; // 帧数据
     private long tms; // 时间戳（ms）
+    private int type;
+    
+    public static final int RTMP_PACKET_TYPE_VIDEO = 0;
+    public static final int RTMP_PACKET_TYPE_AUDIO_DATA = 1;
+    public static final int RTMP_PACKET_TYPE_AUDIO_HEADER = 2;
 
-    public RtmpPackage(byte[] buffer, long tms) {
+    public RtmpPackage(int type, byte[] buffer, long tms) {
+        this.type = type;
         this.buffer = buffer;
         this.tms = tms;
     }
@@ -17,17 +23,11 @@ public class RtmpPackage {
         return buffer;
     }
 
-    public RtmpPackage setBuffer(byte[] buffer) {
-        this.buffer = buffer;
-        return this;
-    }
-
     public long getTms() {
         return tms;
     }
 
-    public RtmpPackage setTms(long tms) {
-        this.tms = tms;
-        return this;
+    public int getType() {
+        return type;
     }
 } 

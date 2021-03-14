@@ -23,11 +23,15 @@ typedef struct {
 // 全局
 Live *live = NULL;
 
-int sendVideo(jbyte *data, jint len, jlong tms);
+int sendVideo(int8_t *data, const int len, const long tms);
 
-void prepareVideo(jbyte *buf, jint len, jlong tms);
+void prepareVideo(int8_t *buf, const int len, const long tms;
 
 RTMPPacket *createVideoSPSPPSPackage(Live *live);
+
+int sendAudio(int8_t *data, const int type, const int len, const long tms);
+
+RTMPPacket *createAudioPackage(int8_t *data,const int type, const int len, const long tms, Live *live);
 
 extern "C"
 JNIEXPORT jboolean JNICALL
@@ -171,8 +175,9 @@ RTMPPacket *createVideoSPSPPSPackage(Live *live) {
 
 RTMPPacket *createVideoPackage(int8_t *buf, jint len, const long tms, Live *live) {
 
-    RTMPPacket *rtmpPacket = static_cast<RTMPPacket *>(malloc(sizeof(RTMPPacket)));
+    len -= 4;
     int body_size = 9 + len;
+    RTMPPacket *rtmpPacket = static_cast<RTMPPacket *>(malloc(sizeof(RTMPPacket)));
     RTMPPacket_Alloc(rtmpPacket, body_size);
 
     rtmpPacket->m_packetType = RTMP_PACKET_TYPE_VIDEO; //视频数据包
@@ -183,7 +188,7 @@ RTMPPacket *createVideoPackage(int8_t *buf, jint len, const long tms, Live *live
     rtmpPacket->m_headerType = RTMP_PACKET_SIZE_LARGE; //header的数据较大
     rtmpPacket->m_nInfoField2 = live->rtmp->m_stream_id; // id
 
-    buf += 4;
+    buf += 4; //首地址跳过分隔符
     if(buf[0] == 0x65){
         //关键帧
         rtmpPacket->m_body[0] = 0x17;
@@ -205,7 +210,7 @@ RTMPPacket *createVideoPackage(int8_t *buf, jint len, const long tms, Live *live
     rtmpPacket->m_body[8] = len & 0xFF;
 
     //数据
-    memcpy(&rtmpPacket->m_body[9], buf, len);
+    memcpy(&rtmpPacket->m_body[9], buf, len); 
     return rtmpPacket;
 }
 
@@ -246,11 +251,54 @@ int sendVideo(int8_t *buf, jint len, jlong tms) {
 extern "C"
 JNIEXPORT jboolean JNICALL
 Java_com_diaochan_rtmpbilibili_ScreenLive_sendData(JNIEnv *env, jobject thiz, jbyteArray _data,
-                                                   jint len, jlong tms) {
+                                                   jint type, jint len, jlong tms) {
     int ret;
     jbyte *data = env->GetByteArrayElements(_data, 0);
-    // 推送视频
-    ret = sendVideo(data, len, tms);
+    switch (type) {
+        case 0:
+            // 推送视频
+            ret = sendVideo(data, len, tms);
+            LOGI("send video packet length : %d\n", len);
+            break;
+            
+        default:
+            // 推送音频
+            ret = sendAudio(data, type, len, tms);
+            LOGI("send audio packet length : %d\n", len);
+            break;
+    }
     env->ReleaseByteArrayElements(_data, data, 0);
     return ret;
+}
+
+int sendAudio(int8_t *data, const int type, const int len, const long tms) {
+    RTMPPacket *packet = createAudioPackage(data, type, len, tms, live);
+    int ret = sendPacket(packet);
+    return ret;
+}
+
+RTMPPacket *createAudioPackage(int8_t *data, const int type, const int len, const long tms, Live *live) {
+    // 组装音频数据包  2个固定字节(0XAF 0X00/0X01) + 数据长度
+    RTMPPacket *rtmpPacket = static_cast<RTMPPacket *>(malloc(sizeof(RTMPPacket)));
+    int body_size = len + 2;
+    RTMPPacket_Alloc(rtmpPacket , body_size);
+
+    rtmpPacket->m_packetType = RTMP_PACKET_TYPE_AUDIO;
+    rtmpPacket->m_nChannel = 0X05; //通道ID，要不同于视频的
+    rtmpPacket->m_nBodySize = body_size; //数据包大小
+    rtmpPacket->m_nTimeStamp = tms; //时间戳
+    rtmpPacket->m_hasAbsTimestamp = 0; // 不使用绝对时间，使用相对时间
+    rtmpPacket->m_headerType = RTMP_PACKET_SIZE_LARGE; //header的数据较大
+    rtmpPacket->m_nInfoField2 = live->rtmp->m_stream_id; // id
+
+    rtmpPacket->m_body[0] = 0xAF;
+    if(type == 2){
+        // 第一个音频数据包
+        rtmpPacket->m_body[1] = 0x00;
+    }else{
+        rtmpPacket->m_body[1] = 0x01;
+    }
+    
+    memcpy(&rtmpPacket->m_body[2], data, len);
+    return rtmpPacket;
 }

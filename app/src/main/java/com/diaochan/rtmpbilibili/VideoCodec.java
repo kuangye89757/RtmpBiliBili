@@ -7,6 +7,7 @@ import android.media.MediaCodecInfo;
 import android.media.MediaFormat;
 import android.media.projection.MediaProjection;
 import android.os.Bundle;
+import android.util.Log;
 import android.view.Surface;
 
 import java.io.IOException;
@@ -52,18 +53,15 @@ public class VideoCodec extends Thread {
         } catch (IOException e) {
             e.printStackTrace();
         }
-        start();
+        LiveTaskManager.getInstance().execute(this);
     }
 
     @Override
     public void run() {
-        super.run();
-
         // 3. 编码开始
         isLiving = true;
         mediaCodec.start();
         MediaCodec.BufferInfo bufferInfo = new MediaCodec.BufferInfo();
-
         while (isLiving) {
             
             // 直播要求I帧比较严格
@@ -77,7 +75,7 @@ public class VideoCodec extends Thread {
             
             // 获取编码后数据
             int outputIndex = mediaCodec.dequeueOutputBuffer(bufferInfo, 10000);
-            if (outputIndex >= 0) {
+            while (outputIndex >= 0 && isLiving) {
                 ByteBuffer outputBuffer = mediaCodec.getOutputBuffer(outputIndex);
                 byte[] data = new byte[bufferInfo.size];
                 outputBuffer.get(data);
@@ -87,13 +85,15 @@ public class VideoCodec extends Thread {
                 if (startTimeMs == 0) {
                     startTimeMs = bufferInfo.presentationTimeUs / 1000;
                 }
-                RtmpPackage rtmpPackage = new RtmpPackage(data, bufferInfo.presentationTimeUs / 1000 - startTimeMs);
+                RtmpPackage rtmpPackage = new RtmpPackage(RtmpPackage.RTMP_PACKET_TYPE_VIDEO, 
+                        data, bufferInfo.presentationTimeUs / 1000 - startTimeMs);
                 screenLive.addPackage(rtmpPackage);
                 mediaCodec.releaseOutputBuffer(outputIndex, false);
+                outputIndex = mediaCodec.dequeueOutputBuffer(bufferInfo, 0);
             }
         }
         
-        // 4. 推流完成释放
+        // 5. 推流完成释放
         isLiving = false;
         mediaCodec.stop();
         mediaCodec.release();

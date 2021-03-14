@@ -9,7 +9,6 @@ import java.util.concurrent.LinkedBlockingQueue;
  * Create by shijie.wang on 2021/3/11.
  */
 public class ScreenLive extends Thread {
-
     static {
         System.loadLibrary("native-lib");
     }
@@ -20,6 +19,7 @@ public class ScreenLive extends Thread {
     private String url;
     private MediaProjection mediaProjection;
     private VideoCodec videoCodec;
+    private AudioCodec audioCodec;
 
     public void addPackage(RtmpPackage rtmpPackage) {
         // 生产者
@@ -33,21 +33,20 @@ public class ScreenLive extends Thread {
     public void startLive(String url, MediaProjection mediaProjection) {
         this.url = url;
         this.mediaProjection = mediaProjection;
-        start();
+        LiveTaskManager.getInstance().execute(this);
     }
 
     @Override
     public void run() {
-        super.run();
-
         if (!connect(url)) {
             Log.d(TAG, "连接错误，推流失败~");
             return;
         }
-
         // 2. 初始化编码层
         videoCodec = new VideoCodec(this);
+        audioCodec = new AudioCodec(this);
         videoCodec.startLive(mediaProjection);
+        audioCodec.startLive();
         isLiving = true;
 
         while (isLiving) {
@@ -60,7 +59,7 @@ public class ScreenLive extends Thread {
             byte[] bytes = rtmpPackage.getBuffer();
             if (bytes != null && bytes.length != 0) {
                 // 5. 获取编码后的数据, 交由native层推流
-                sendData(bytes, bytes.length, rtmpPackage.getTms());
+                sendData(bytes,rtmpPackage.getType(), bytes.length, rtmpPackage.getTms());
             }
         }
     }
@@ -68,5 +67,5 @@ public class ScreenLive extends Thread {
 
     private native boolean connect(String url);
 
-    private native boolean sendData(byte[] data, int len, long tms);
+    private native boolean sendData(byte[] data, int type, int len, long tms);
 } 
